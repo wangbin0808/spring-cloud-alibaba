@@ -77,6 +77,10 @@ public class NacosContextRefresher
 		this.isRefreshEnabled = this.nacosConfigProperties.isRefreshEnabled();
 	}
 
+	/**
+	 * 当
+	 * @param event
+	 */
 	@Override
 	public void onApplicationEvent(ApplicationReadyEvent event) {
 		// many Spring context
@@ -92,6 +96,7 @@ public class NacosContextRefresher
 
 	/**
 	 * register Nacos Listeners.
+	 * 注册nacos监听器
 	 */
 	private void registerNacosListenersForApplications() {
 		if (isRefreshEnabled()) {
@@ -108,6 +113,7 @@ public class NacosContextRefresher
 
 	private void registerNacosListener(final String groupKey, final String dataKey) {
 		String key = NacosPropertySourceRepository.getMapKey(dataKey, groupKey);
+		// 设置监听器，listenerMap里面没有则设置
 		Listener listener = listenerMap.computeIfAbsent(key,
 				lst -> new AbstractSharedListener() {
 					@Override
@@ -115,6 +121,7 @@ public class NacosContextRefresher
 							String configInfo) {
 						refreshCountIncrement();
 						nacosRefreshHistory.addRefreshRecord(dataId, group, configInfo);
+						// 发布监听的事件，如果有变更就会发布这个事件，将本地的配置文件更新到应用内存中
 						applicationContext.publishEvent(
 								new RefreshEvent(this, null, "Refresh Nacos config"));
 						if (log.isDebugEnabled()) {
@@ -125,6 +132,7 @@ public class NacosContextRefresher
 					}
 				});
 		try {
+			// 添加监听器
 			configService.addListener(dataKey, groupKey, listener);
 			log.info("[Nacos Config] Listening config: dataId={}, group={}", dataKey,
 					groupKey);

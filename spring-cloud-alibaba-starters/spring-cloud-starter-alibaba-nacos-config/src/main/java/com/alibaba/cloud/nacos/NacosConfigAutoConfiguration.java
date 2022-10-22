@@ -69,6 +69,7 @@ public class NacosConfigAutoConfiguration {
 		// Consider that it is not necessary to be compatible with the previous
 		// configuration
 		// and use the new configuration if necessary.
+		// config client 将更新同步到应用实例
 		return new NacosContextRefresher(nacosConfigManager, nacosRefreshHistory);
 	}
 

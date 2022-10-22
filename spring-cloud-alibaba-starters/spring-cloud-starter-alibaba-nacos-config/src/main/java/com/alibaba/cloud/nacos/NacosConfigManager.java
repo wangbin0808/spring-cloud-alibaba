@@ -40,6 +40,7 @@ public class NacosConfigManager {
 		this.nacosConfigProperties = nacosConfigProperties;
 		// Compatible with older code in NacosConfigProperties,It will be deleted in the
 		// future.
+		// 创建nacosConfigService
 		createConfigService(nacosConfigProperties);
 	}
 

@@ -72,8 +72,15 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 		this.nacosConfigProperties = nacosConfigManager.getNacosConfigProperties();
 	}
 
+	/**
+	 * springBoot 在启动时会准备环境，此时会调用该方法
+	 * 该方法会从配置中心加载配置文件
+	 * @param env
+	 * @return
+	 */
 	@Override
 	public PropertySource<?> locate(Environment env) {
+		// 将bootstrap.yml文件内容加载到内存
 		nacosConfigProperties.setEnvironment(env);
 		ConfigService configService = nacosConfigManager.getConfigService();
 
@@ -81,25 +88,36 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 			log.warn("no instance of config service found, can't load config from nacos");
 			return null;
 		}
+		// 配置文件加载超时时限
 		long timeout = nacosConfigProperties.getTimeout();
 		nacosPropertySourceBuilder = new NacosPropertySourceBuilder(configService,
 				timeout);
+		// 获取spring.cloud.nacos.config.name属性值，即要加载的配置文件的名称
 		String name = nacosConfigProperties.getName();
 
+		// 获取spring.cloud.nacos.config.prefix属性值，即要加载的配置文件的名称
 		String dataIdPrefix = nacosConfigProperties.getPrefix();
 		if (StringUtils.isEmpty(dataIdPrefix)) {
 			dataIdPrefix = name;
 		}
 
+		// 若没有设置name与prefix属性，则要加载的配置文件名称取spring.application.name属性
 		if (StringUtils.isEmpty(dataIdPrefix)) {
 			dataIdPrefix = env.getProperty("spring.application.name");
 		}
 
+		// 加载的内存全部放在这个里面
 		CompositePropertySource composite = new CompositePropertySource(
 				NACOS_PROPERTY_SOURCE_NAME);
 
+		// 加载共享配置
+		// 1、首先加载本地配置
+		// 2、若没有，则加载远程配置
+		// 3、若还没有，则加载本地快照配置
 		loadSharedConfiguration(composite);
+		// 加载扩展配置
 		loadExtConfiguration(composite);
+		// 加载自身配置（注意，其会加载三类配置文件）
 		loadApplicationConfiguration(composite, dataIdPrefix, nacosConfigProperties, env);
 		return composite;
 	}
@@ -109,10 +127,14 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 	 */
 	private void loadSharedConfiguration(
 			CompositePropertySource compositePropertySource) {
+		// 获取所有共享配置文件
 		List<NacosConfigProperties.Config> sharedConfigs = nacosConfigProperties
 				.getSharedConfigs();
+		//只要存在共享配置文件，则加载他们
 		if (!CollectionUtils.isEmpty(sharedConfigs)) {
+			// 检测所有共享配置文件
 			checkConfiguration(sharedConfigs, "shared-configs");
+			// 加载所有配置文件
 			loadNacosConfiguration(compositePropertySource, sharedConfigs);
 		}
 	}
@@ -121,6 +143,7 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 	 * load extensional configuration.
 	 */
 	private void loadExtConfiguration(CompositePropertySource compositePropertySource) {
+		// 获取所有
 		List<NacosConfigProperties.Config> extConfigs = nacosConfigProperties
 				.getExtensionConfigs();
 		if (!CollectionUtils.isEmpty(extConfigs)) {
@@ -135,16 +158,22 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 	private void loadApplicationConfiguration(
 			CompositePropertySource compositePropertySource, String dataIdPrefix,
 			NacosConfigProperties properties, Environment environment) {
+		// 获取配置文件扩展名，默认properties
 		String fileExtension = properties.getFileExtension();
+		// 获取配置文件所在的groupId
 		String nacosGroup = properties.getGroup();
 		// load directly once by default
+		// 1、加载仅有文件名称，没有扩展名的配置文件
 		loadNacosDataIfPresent(compositePropertySource, dataIdPrefix, nacosGroup,
 				fileExtension, true);
 		// load with suffix, which have a higher priority than the default
+		// 2、加载有文件名称，也有扩展名的配置文件
 		loadNacosDataIfPresent(compositePropertySource,
 				dataIdPrefix + DOT + fileExtension, nacosGroup, fileExtension, true);
 		// Loaded with profile, which have a higher priority than the suffix
+//		3、加载有文件名，有扩展名，且还包含多环境选择profile的配置文件
 		for (String profile : environment.getActiveProfiles()) {
+			// 如: prefix-profile.yml
 			String dataId = dataIdPrefix + SEP1 + profile + DOT + fileExtension;
 			loadNacosDataIfPresent(compositePropertySource, dataId, nacosGroup,
 					fileExtension, true);
@@ -155,6 +184,7 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 	private void loadNacosConfiguration(final CompositePropertySource composite,
 			List<NacosConfigProperties.Config> configs) {
 		for (NacosConfigProperties.Config config : configs) {
+			// 加载当前遍历的配置文件
 			loadNacosDataIfPresent(composite, config.getDataId(), config.getGroup(),
 					NacosDataParserHandler.getInstance()
 							.getFileExtension(config.getDataId()),
@@ -166,6 +196,7 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 			String tips) {
 		for (int i = 0; i < configs.size(); i++) {
 			String dataId = configs.get(i).getDataId();
+			// 若配置文件没有dataId属性，则抛出异常
 			if (dataId == null || dataId.trim().length() == 0) {
 				throw new IllegalStateException(String.format(
 						"the [ spring.cloud.nacos.config.%s[%s] ] must give a dataId",
@@ -183,19 +214,23 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 		if (null == group || group.trim().length() < 1) {
 			return;
 		}
+		// 加载指定名称的配置文件
 		NacosPropertySource propertySource = this.loadNacosPropertySource(dataId, group,
 				fileExtension, isRefreshable);
+		// 将加载的配置文件添加到composite中
 		this.addFirstPropertySource(composite, propertySource, false);
 	}
 
 	private NacosPropertySource loadNacosPropertySource(final String dataId,
 			final String group, String fileExtension, boolean isRefreshable) {
+		// 处理不能自动刷新的情况
 		if (NacosContextRefresher.getRefreshCount() != 0) {
 			if (!isRefreshable) {
 				return NacosPropertySourceRepository.getNacosPropertySource(dataId,
 						group);
 			}
 		}
+		// 处理配置文件会自动刷新的情况
 		return nacosPropertySourceBuilder.build(dataId, group, fileExtension,
 				isRefreshable);
 	}
@@ -212,6 +247,7 @@ public class NacosPropertySourceLocator implements PropertySourceLocator {
 		if (ignoreEmpty && nacosPropertySource.getSource().isEmpty()) {
 			return;
 		}
+		// 将配置文件添加到composite
 		composite.addFirstPropertySource(nacosPropertySource);
 	}
 
